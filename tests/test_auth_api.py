@@ -79,17 +79,19 @@ def test_authentication_failure_does_not_call_agent_run_service(monkeypatch):
     assert called is False
 
 
-def test_authentication_failure_does_not_call_agent_service(monkeypatch):
+def test_authentication_failure_does_not_create_database_session_scope(monkeypatch):
     called = False
 
-    def forbidden_service():
+    def forbidden_database_session_scope():
         nonlocal called
         called = True
-        raise AssertionError("service must not be resolved")
+        raise AssertionError("database session scope must not be resolved")
 
     monkeypatch.setenv("PLATFORM_API_KEY", "test-platform-key")
     application = create_app()
-    application.dependency_overrides[agents_api_module.get_agent_service] = forbidden_service
+    application.dependency_overrides[agents_api_module.get_database_session_scope] = (
+        forbidden_database_session_scope
+    )
     response = TestClient(application).post(
         "/api/v1/agents",
         json={
