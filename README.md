@@ -15,8 +15,8 @@ $env:DATABASE_URL = "postgresql+psycopg://chint:chint-local-password@localhost:5
 alembic upgrade head
 pytest -v
 $env:DEEPSEEK_API_KEY = "你的-DeepSeek-API-Key"
-$env:PLATFORM_API_KEY = "你的-平台-API-Key"
-$headers = @{ "X-API-Key" = $env:PLATFORM_API_KEY }
+$env:PLATFORM_API_KEY = "替换为长随机平台密钥"
+$headers = @{ Authorization = "Bearer $env:PLATFORM_API_KEY" }
 uvicorn chint_ai_platform.main:app --reload
 ```
 
@@ -29,7 +29,7 @@ uvicorn chint_ai_platform.main:app --reload
 
 `DEEPSEEK_API_KEY` 与 `PLATFORM_API_KEY` 均为必填项。缺少 `PLATFORM_API_KEY` 时，受保护接口返回 `503/auth_not_configured`；请求未携带或携带无效凭证时返回 `401/invalid_api_key`。缺少 `DEEPSEEK_API_KEY` 时，Agent 运行接口返回 `503/deepseek_not_configured`。
 
-所有 `/api/v1` 接口都需要在 `X-API-Key` 请求头中提供 `PLATFORM_API_KEY`。`/health`、`/docs` 与 `/openapi.json` 是公开接口，无需 API Key；即使鉴权服务配置缺失，健康检查和 API 文档仍可访问。
+所有 `/api/v1` 接口都需要在 `Authorization: Bearer <PLATFORM_API_KEY>` 请求头中提供 `PLATFORM_API_KEY`。`/health`、`/docs` 与 `/openapi.json` 是公开接口，无需 API Key；即使鉴权服务配置缺失，健康检查和 API 文档仍可访问。
 
 服务启动后可访问：
 
