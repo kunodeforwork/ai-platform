@@ -29,10 +29,3 @@ class AgentRunService:
     def run(self, message: str) -> AgentRun:
         output = self._executor.execute(message)
         return AgentRun(run_id=str(uuid4()), status="completed", output=output)
-
-
-class EchoAgentExecutor:
-    """Deterministic executor used by the first runnable slice."""
-
-    def execute(self, message: str) -> str:
-        return message

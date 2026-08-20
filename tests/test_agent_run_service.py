@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from chint_ai_platform.agent_runs import AgentRunService, EchoAgentExecutor
+from chint_ai_platform.agent_runs import AgentRunService
 
 
 class RecordingExecutor:
@@ -23,9 +23,3 @@ def test_run_delegates_message_and_returns_completed_result() -> None:
     assert result.status == "completed"
     assert result.output == "已处理"
     assert str(UUID(result.run_id)) == result.run_id
-
-
-def test_echo_executor_returns_the_received_message() -> None:
-    executor = EchoAgentExecutor()
-
-    assert executor.execute("检查变压器告警") == "检查变压器告警"
