@@ -101,7 +101,10 @@ def test_invalid_api_key_error_does_not_expose_credentials(monkeypatch):
     assert client_key not in str(error.value)
 
 
-@pytest.mark.parametrize("authorization", [None, "", "Basic secret", "Bearer", "Bearer wrong-key"])
+@pytest.mark.parametrize(
+    "authorization",
+    [None, "", "secret", "Basic secret", "Bearer", "Bearer    ", "Bearer wrong-key"],
+)
 def test_all_invalid_authorization_headers_are_indistinguishable(
     monkeypatch, authorization
 ):
@@ -115,6 +118,18 @@ def test_all_invalid_authorization_headers_are_indistinguishable(
     assert response.json() == {
         "error": {"code": "invalid_api_key", "message": "Invalid API key"}
     }
+
+
+def test_matching_bearer_authorization_allows_protected_request(monkeypatch):
+    monkeypatch.setenv("PLATFORM_API_KEY", "test-platform-key")
+
+    response = TestClient(make_protected_app()).get(
+        "/protected",
+        headers={"Authorization": "Bearer test-platform-key"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
 
 
 @pytest.mark.parametrize("authorization", [None, "Bearer wrong-key"])
