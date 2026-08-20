@@ -7,7 +7,6 @@ import pytest
 
 import chint_ai_platform.deepseek as deepseek_module
 from chint_ai_platform.deepseek import (
-    SYSTEM_PROMPT,
     DeepSeekAgentExecutor,
     DeepSeekAuthenticationError,
     DeepSeekRateLimitedError,
@@ -61,14 +60,14 @@ def test_executor_sends_non_thinking_v4_flash_request() -> None:
         client=client,
     )
 
-    result = executor.execute("分析本月销售异常")
+    result = executor.execute("你是销售分析助手", "分析本月销售异常")
 
     assert result == "发现华东区域销售异常"
     assert client.completions.requests == [
         {
             "model": "deepseek-v4-flash",
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": "你是销售分析助手"},
                 {"role": "user", "content": "分析本月销售异常"},
             ],
             "stream": False,
@@ -87,7 +86,7 @@ def test_executor_sends_non_thinking_v4_flash_request() -> None:
 )
 def test_executor_rejects_missing_or_blank_content(response: object) -> None:
     with pytest.raises(DeepSeekUpstreamError):
-        make_executor(RecordingClient(response)).execute("检查告警")
+        make_executor(RecordingClient(response)).execute("你是告警助手", "检查告警")
 
 
 def upstream_errors() -> list[tuple[Exception, type[Exception]]]:
@@ -128,7 +127,7 @@ def test_executor_translates_sdk_errors(
     expected_error: type[Exception],
 ) -> None:
     with pytest.raises(expected_error):
-        make_executor(FailingClient(sdk_error)).execute("检查告警")
+        make_executor(FailingClient(sdk_error)).execute("你是告警助手", "检查告警")
 
 
 def test_environment_executor_builds_client_from_environment(
@@ -149,7 +148,7 @@ def test_environment_executor_builds_client_from_environment(
     monkeypatch.setenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
     monkeypatch.setattr(deepseek_module, "OpenAI", create_client)
 
-    result = EnvironmentDeepSeekAgentExecutor().execute("检查告警")
+    result = EnvironmentDeepSeekAgentExecutor().execute("你是告警助手", "检查告警")
 
     assert result == "已完成分析"
     assert client_configurations == [

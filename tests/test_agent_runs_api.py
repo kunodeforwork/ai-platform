@@ -5,6 +5,7 @@ import chint_ai_platform.deepseek as deepseek_module
 from chint_ai_platform.agent_runs import AgentRun
 from chint_ai_platform.api import get_agent_run_service
 from chint_ai_platform.deepseek import (
+    DEFAULT_SYSTEM_PROMPT,
     DeepSeekAuthenticationError,
     DeepSeekRateLimitedError,
     DeepSeekTimeoutError,
@@ -16,10 +17,10 @@ from chint_ai_platform.settings import DeepSeekNotConfiguredError
 
 class RecordingAgentRunService:
     def __init__(self) -> None:
-        self.received_messages: list[str] = []
+        self.received_requests: list[tuple[str, str]] = []
 
-    def run(self, message: str) -> AgentRun:
-        self.received_messages.append(message)
+    def run(self, system_prompt: str, message: str) -> AgentRun:
+        self.received_requests.append((system_prompt, message))
         return AgentRun(
             run_id="d6109938-c9ba-4bc0-a20a-27e1b1fceb67",
             status="completed",
@@ -31,7 +32,7 @@ class RaisingAgentRunService:
     def __init__(self, error: Exception) -> None:
         self.error = error
 
-    def run(self, message: str) -> AgentRun:
+    def run(self, system_prompt: str, message: str) -> AgentRun:
         raise self.error
 
 
@@ -50,7 +51,7 @@ def test_create_agent_run_delegates_and_maps_completed_result() -> None:
     )
 
     assert response.status_code == 201
-    assert service.received_messages == ["分析本月销售异常"]
+    assert service.received_requests == [(DEFAULT_SYSTEM_PROMPT, "分析本月销售异常")]
     assert response.json() == {
         "run_id": "d6109938-c9ba-4bc0-a20a-27e1b1fceb67",
         "status": "completed",

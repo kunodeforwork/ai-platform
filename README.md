@@ -26,8 +26,29 @@ uvicorn chint_ai_platform.main:app --reload
 服务启动后可访问：
 
 - 健康检查：`GET http://127.0.0.1:8000/health`
+- 创建 Agent：`POST http://127.0.0.1:8000/api/v1/agents`
+- 查询 Agent：`GET http://127.0.0.1:8000/api/v1/agents/{agent_id}`
+- 按 Agent 运行：`POST http://127.0.0.1:8000/api/v1/agents/{agent_id}/runs`
 - Agent 运行：`POST http://127.0.0.1:8000/api/v1/agent-runs`
 - OpenAPI 文档：`http://127.0.0.1:8000/docs`
+
+创建 Agent：
+
+```powershell
+$agent = Invoke-RestMethod -Method Post `
+  -Uri http://127.0.0.1:8000/api/v1/agents `
+  -ContentType 'application/json' `
+  -Body '{"name":"销售分析助手","description":"分析区域销售异常","system_prompt":"你是正泰销售分析助手，请给出简洁、可验证的分析。"}'
+```
+
+使用该 Agent 运行：
+
+```powershell
+Invoke-RestMethod -Method Post `
+  -Uri "http://127.0.0.1:8000/api/v1/agents/$($agent.id)/runs" `
+  -ContentType 'application/json' `
+  -Body '{"message":"分析本月销售异常"}'
+```
 
 示例请求：
 
@@ -51,5 +72,7 @@ Invoke-RestMethod -Method Post `
 ## 测试与当前边界
 
 自动测试使用手写假客户端，不连接 DeepSeek，也不需要真实密钥。设置密钥并启动服务后，上面的示例请求就是显式的真实连通性检查。
+
+Agent 配置当前只保存在单个服务进程的内存中；服务重启会丢失，多进程实例之间也不会共享。下一切片将用 PostgreSQL 仓储替换该实现。
 
 本切片不包含数据库、鉴权、租户隔离、任务队列、多轮会话、流式输出、工具调用、Docker 或前端。`AgentExecutor` 协议仍是后续接入其他模型与编排框架的替换点。

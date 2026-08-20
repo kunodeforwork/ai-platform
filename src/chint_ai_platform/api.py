@@ -9,6 +9,7 @@ from pydantic import BaseModel, StringConstraints
 
 from chint_ai_platform.agent_runs import AgentRunService
 from chint_ai_platform.deepseek import (
+    DEFAULT_SYSTEM_PROMPT,
     DeepSeekAuthenticationError,
     DeepSeekRateLimitedError,
     DeepSeekTimeoutError,
@@ -104,7 +105,7 @@ def create_agent_run(
     request: CreateAgentRunRequest,
     service: Annotated[AgentRunService, Depends(get_agent_run_service)],
 ) -> AgentRunResponse:
-    result = service.run(request.message)
+    result = service.run(DEFAULT_SYSTEM_PROMPT, request.message)
     return AgentRunResponse(
         run_id=result.run_id,
         status=result.status,

@@ -8,7 +8,7 @@ from openai import OpenAI
 
 from chint_ai_platform.settings import DeepSeekNotConfiguredError, DeepSeekSettings
 
-SYSTEM_PROMPT = (
+DEFAULT_SYSTEM_PROMPT = (
     "你是正泰企业 AI 助手。请准确、简洁地回答；信息不足时明确说明，不要编造。"
 )
 
@@ -40,12 +40,12 @@ class DeepSeekAgentExecutor:
         self._settings = settings
         self._client = client
 
-    def execute(self, message: str) -> str:
+    def execute(self, system_prompt: str, message: str) -> str:
         try:
             response = self._client.chat.completions.create(
                 model=self._settings.model,
                 messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": message},
                 ],
                 stream=False,
@@ -93,5 +93,5 @@ class EnvironmentDeepSeekAgentExecutor:
                 self._executor_instance = DeepSeekAgentExecutor(settings, client=client)
             return self._executor_instance
 
-    def execute(self, message: str) -> str:
-        return self._get_executor().execute(message)
+    def execute(self, system_prompt: str, message: str) -> str:
+        return self._get_executor().execute(system_prompt, message)
