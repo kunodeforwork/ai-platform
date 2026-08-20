@@ -1,18 +1,21 @@
 """FastAPI application factory and ASGI entry point."""
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 
 from chint_ai_platform.agents_api import register_agent_exception_handlers
 from chint_ai_platform.agents_api import router as agents_router
 from chint_ai_platform.api import register_deepseek_exception_handlers
 from chint_ai_platform.api import router as agent_runs_router
+from chint_ai_platform.auth import register_auth_exception_handlers, require_api_key
 
 
 def create_app() -> FastAPI:
     """Create a configured FastAPI application."""
     application = FastAPI(title="CHINT Enterprise AI Agent Platform", version="0.1.0")
-    application.include_router(agent_runs_router)
-    application.include_router(agents_router)
+    authentication = [Depends(require_api_key)]
+    application.include_router(agent_runs_router, dependencies=authentication)
+    application.include_router(agents_router, dependencies=authentication)
+    register_auth_exception_handlers(application)
     register_deepseek_exception_handlers(application)
     register_agent_exception_handlers(application)
 
