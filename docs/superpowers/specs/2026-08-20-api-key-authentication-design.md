@@ -1,76 +1,68 @@
-# API Key Authentication Design
+# API Key 鉴权设计
 
-## Goal
+## 目标
 
-Protect every business API with one deployment-provided platform API key while keeping
-health checks and API documentation available. The slice establishes a small security
-boundary that can later be replaced by tenant-aware credentials without coupling
-authentication to Agent, persistence, or model execution code.
+使用一个由部署环境提供的平台 API Key 保护所有业务 API，同时保持健康检查和 API
+文档可访问。本切片建立一个小而清晰的安全边界，后续可替换为租户级凭证，而无需让鉴权
+逻辑耦合 Agent、持久化或模型执行代码。
 
-## Scope
+## 范围
 
-- Require HTTP Bearer authentication for both current `/api/v1` router families:
-  Agent configuration and Agent runs.
-- Read one `PLATFORM_API_KEY` from the process environment lazily.
-- Keep `/health`, `/docs`, and `/openapi.json` public.
-- Publish the Bearer scheme and protected-operation requirements in OpenAPI.
-- Preserve every existing authenticated success response and downstream error contract.
+- 为当前两个 `/api/v1` 路由族启用 HTTP Bearer 鉴权：Agent 配置与 Agent 运行。
+- 从进程环境中惰性读取单个 `PLATFORM_API_KEY`。
+- 保持 `/health`、`/docs` 和 `/openapi.json` 公开。
+- 在 OpenAPI 中声明 Bearer 鉴权方案及受保护操作。
+- 鉴权通过后，保持所有现有成功响应和下游错误契约不变。
 
-This slice does not include login, credential issuance or rotation, multiple keys, users,
-RBAC, tenant isolation, JWT, OAuth, rate limiting, or actor attribution in run audit
-records.
+本切片不包含登录、凭证签发或轮换、多密钥、用户、RBAC、租户隔离、JWT、OAuth、限流，
+也不在运行审计记录中保存请求发起者。
 
-## Approach
+## 方案选择
 
-Use a FastAPI router-level dependency when the two business routers are included in the
-application. This centralizes enforcement, makes omission on individual endpoints less
-likely, and lets FastAPI generate the OpenAPI security declaration. It is preferred over
-path-matching middleware, which would duplicate routing knowledge, and per-endpoint
-declarations, which are repetitive and easy to omit.
+在应用注册两个业务路由时，通过 FastAPI 路由级依赖统一执行鉴权。这种方式集中管理强制
+规则，减少单个端点遗漏鉴权的可能，并让 FastAPI 自动生成 OpenAPI 安全声明。
 
-## Components
+不采用按路径匹配的 HTTP 中间件，因为它会重复维护路由知识；也不采用每个端点单独声明，
+因为重复代码较多，新增接口时容易遗漏。
 
-### Authentication boundary
+## 组件
 
-Add `src/chint_ai_platform/auth.py` with these responsibilities:
+### 鉴权边界
 
-- lazily read and validate `PLATFORM_API_KEY`;
-- extract a Bearer credential through FastAPI's HTTP Bearer security scheme;
-- compare the presented and configured values with `secrets.compare_digest`;
-- raise stable boundary exceptions without embedding credentials;
-- register safe HTTP exception mappings.
+新增 `src/chint_ai_platform/auth.py`，职责如下：
 
-The module exposes a `require_api_key` dependency. It returns no business value: passing
-the boundary only authorizes execution to continue. Agent services, repositories, and
-DeepSeek adapters never receive the key.
+- 惰性读取并校验 `PLATFORM_API_KEY`；
+- 通过 FastAPI 的 HTTP Bearer 安全方案提取客户端凭证；
+- 使用 `secrets.compare_digest` 比较客户端凭证与服务端密钥；
+- 抛出不包含凭证内容的稳定边界异常；
+- 注册安全的 HTTP 异常映射。
 
-### Application composition
+该模块暴露 `require_api_key` 依赖。它不向业务层返回任何值；通过鉴权只表示允许请求继续
+执行。Agent 服务、仓储和 DeepSeek 适配器均不会收到 API Key。
 
-`main.py` attaches `require_api_key` as an include-level dependency to the Agent
-configuration and Agent run routers. The health route remains outside those protected
-router registrations. FastAPI's documentation and OpenAPI endpoints are also left at
-their default public locations.
+### 应用装配
 
-The dependency must remain lazy. Missing authentication configuration does not prevent
-application construction, health checks, documentation access, or OpenAPI generation.
+`main.py` 在注册 Agent 配置和 Agent 运行路由时，将 `require_api_key` 作为统一依赖。
+健康检查路由位于受保护路由之外。FastAPI 的文档和 OpenAPI 端点也保持默认公开位置。
 
-## Request Flow
+鉴权配置必须保持惰性读取。缺少服务端鉴权配置时，不影响应用构建、健康检查、文档访问
+或 OpenAPI 生成。
 
-1. A request targets a protected `/api/v1` route.
-2. The security dependency parses the `Authorization` header as HTTP Bearer.
-3. If the server key is absent or blank, authentication stops with the safe configuration
-   error.
-4. If the header is missing, malformed, uses another scheme, contains a blank credential,
-   or does not match, authentication stops with the same invalid-key response.
-5. A valid key allows normal request validation and the existing business flow to run.
+## 请求流程
 
-Authentication failure must not call an Agent service, create a database Session, invoke
-DeepSeek, or write an Agent run audit record. Authorization headers and credentials must
-not be logged or persisted by application code.
+1. 请求进入受保护的 `/api/v1` 路由。
+2. 安全依赖将 `Authorization` 请求头解析为 HTTP Bearer 凭证。
+3. 服务端密钥缺失或仅包含空白时，鉴权以安全的配置错误终止。
+4. 请求头缺失、格式错误、使用其他认证方案、凭证为空或密钥不匹配时，鉴权以统一的无效
+   密钥响应终止。
+5. 密钥有效时，请求进入现有参数校验和业务处理流程。
 
-## Error Contract
+鉴权失败不得调用 Agent 服务、创建数据库 Session、调用 DeepSeek 或写入 Agent 运行审计
+记录。应用代码不得记录或持久化 Authorization 请求头及其凭证。
 
-Missing or blank server configuration returns:
+## 错误契约
+
+服务端密钥缺失或为空时返回：
 
 ```http
 HTTP/1.1 503 Service Unavailable
@@ -79,7 +71,7 @@ Content-Type: application/json
 {"error":{"code":"auth_not_configured","message":"API authentication is not configured"}}
 ```
 
-Any invalid client credential returns one indistinguishable response:
+任何无效客户端凭证统一返回：
 
 ```http
 HTTP/1.1 401 Unauthorized
@@ -89,41 +81,38 @@ Content-Type: application/json
 {"error":{"code":"invalid_api_key","message":"Invalid API key"}}
 ```
 
-The 401 response does not reveal whether the header was absent, malformed, empty, or
-incorrect. The 503 response does not reveal environment contents. Existing database,
-Agent, validation, and DeepSeek errors remain unchanged after authentication succeeds.
+401 响应不区分请求头缺失、格式错误、空凭证或密钥错误。503 响应不泄露环境变量内容。
+鉴权通过后，现有数据库、Agent、请求校验和 DeepSeek 错误保持不变。
 
 ## OpenAPI
 
-The generated document defines an HTTP Bearer security scheme and applies it to every
-operation from the two protected routers. `/health` has no security requirement. Swagger
-UI remains public and provides its standard **Authorize** control for authenticated API
-calls.
+生成的 OpenAPI 文档定义 HTTP Bearer 安全方案，并将其应用到两个受保护路由中的所有操作。
+`/health` 不声明安全要求。Swagger UI 保持公开，并提供标准的 **Authorize** 按钮用于调用
+受保护接口。
 
-## Testing
+## 测试
 
-Unit tests cover:
+单元测试覆盖：
 
-- valid, missing, blank, and incorrect environment configuration;
-- missing, malformed, wrong-scheme, blank, wrong, and valid client credentials;
-- use of the constant-time comparison boundary;
-- stable exceptions that contain no credential material.
+- 有效、缺失、空白及错误的环境配置；
+- 缺失、格式错误、认证方案错误、空白、错误及正确的客户端凭证；
+- 常量时间比较边界确实被调用；
+- 稳定异常不包含凭证内容。
 
-API tests cover:
+API 测试覆盖：
 
-- both protected router families reject absent and invalid credentials;
-- a valid credential preserves representative existing success and error behavior;
-- authentication failure short-circuits service, database, DeepSeek, and run recording;
-- `/health`, `/docs`, and `/openapi.json` remain public;
-- OpenAPI contains the Bearer scheme and protected-operation security requirements.
+- 两个受保护路由族均拒绝缺失或无效凭证；
+- 有效凭证保持代表性的现有成功和错误行为；
+- 鉴权失败会短路服务、数据库、DeepSeek 和运行记录写入；
+- `/health`、`/docs` 和 `/openapi.json` 保持公开；
+- OpenAPI 包含 Bearer 安全方案和受保护操作的安全要求。
 
-Existing API tests use a shared fixture to configure the platform key and supply a valid
-Authorization header where they are testing behavior beyond authentication. Tests do not
-use a real secret or connect to DeepSeek.
+现有 API 测试通过共享 fixture 配置平台密钥，并在测试鉴权之后的行为时统一提供有效的
+Authorization 请求头。测试不使用真实密钥，也不连接 DeepSeek。
 
-## Delivery
+## 交付
 
-Document `PLATFORM_API_KEY` in `.env.example` and `README.md`, including authenticated
-PowerShell examples. Run the full pytest suite, Ruff, OpenAPI assertions, a secret scan,
-and an independent code review before pushing the feature branch. Merging or pushing
-`main` remains a separate explicit approval step.
+在 `.env.example` 和 `README.md` 中记录 `PLATFORM_API_KEY`，并提供带鉴权的 PowerShell
+示例。交付前运行完整 pytest、Ruff、OpenAPI 断言、敏感信息扫描和独立代码审查。
+
+合并或推送 `main` 仍需单独获得明确批准。
