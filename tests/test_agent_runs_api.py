@@ -55,7 +55,9 @@ class RecordingRunQuery:
         ).complete("输出", datetime(2026, 8, 20, 9, 31, tzinfo=UTC))
 
 
-def test_create_agent_run_delegates_and_maps_completed_result() -> None:
+def test_create_agent_run_delegates_and_maps_completed_result(
+    auth_headers: dict[str, str],
+) -> None:
     service = RecordingAgentRunService()
     application = create_app()
     application.dependency_overrides[get_agent_run_service] = lambda: service
@@ -63,6 +65,7 @@ def test_create_agent_run_delegates_and_maps_completed_result() -> None:
     response = TestClient(application).post(
         "/api/v1/agent-runs",
         json={"message": "分析本月销售异常"},
+        headers=auth_headers,
     )
 
     assert response.status_code == 201
@@ -74,10 +77,13 @@ def test_create_agent_run_delegates_and_maps_completed_result() -> None:
     }
 
 
-def test_create_agent_run_rejects_whitespace_only_message() -> None:
+def test_create_agent_run_rejects_whitespace_only_message(
+    auth_headers: dict[str, str],
+) -> None:
     response = TestClient(create_app()).post(
         "/api/v1/agent-runs",
         json={"message": "   "},
+        headers=auth_headers,
     )
 
     assert response.status_code == 422
@@ -86,6 +92,7 @@ def test_create_agent_run_rejects_whitespace_only_message() -> None:
 def test_default_agent_run_service_reports_missing_deepseek_key(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
+    auth_headers: dict[str, str],
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'runs.db'}"
     Base.metadata.create_all(create_engine(database_url))
@@ -100,8 +107,11 @@ def test_default_agent_run_service_reports_missing_deepseek_key(
         response = client.post(
             "/api/v1/agent-runs",
             json={"message": "分析本月销售异常"},
+            headers=auth_headers,
         )
-        run_response = client.get(f"/api/v1/agent-runs/{response.json()['run_id']}")
+        run_response = client.get(
+            f"/api/v1/agent-runs/{response.json()['run_id']}", headers=auth_headers
+        )
     finally:
         get_agent_run_service.cache_clear()
         get_agent_run_recorder.cache_clear()
@@ -122,6 +132,7 @@ def test_default_agent_run_service_reports_missing_deepseek_key(
 def test_default_service_maps_client_construction_failure_to_safe_upstream_error(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
+    auth_headers: dict[str, str],
 ) -> None:
     def fail_to_create_client(**configuration: str) -> None:
         raise ValueError("sensitive client configuration detail")
@@ -140,8 +151,11 @@ def test_default_service_maps_client_construction_failure_to_safe_upstream_error
         response = client.post(
             "/api/v1/agent-runs",
             json={"message": "分析本月销售异常"},
+            headers=auth_headers,
         )
-        run_response = client.get(f"/api/v1/agent-runs/{response.json()['run_id']}")
+        run_response = client.get(
+            f"/api/v1/agent-runs/{response.json()['run_id']}", headers=auth_headers
+        )
     finally:
         get_agent_run_service.cache_clear()
         get_agent_run_recorder.cache_clear()
@@ -160,7 +174,9 @@ def test_default_service_maps_client_construction_failure_to_safe_upstream_error
     assert run_response.json()["error_code"] == "deepseek_upstream_error"
 
 
-def test_create_agent_run_maps_boundary_exception_subclass() -> None:
+def test_create_agent_run_maps_boundary_exception_subclass(
+    auth_headers: dict[str, str],
+) -> None:
     application = create_app()
     application.dependency_overrides[get_agent_run_service] = lambda: RaisingAgentRunService(
         SpecializedTimeoutError("sensitive timeout detail")
@@ -169,6 +185,7 @@ def test_create_agent_run_maps_boundary_exception_subclass() -> None:
     response = TestClient(application, raise_server_exceptions=False).post(
         "/api/v1/agent-runs",
         json={"message": "分析本月销售异常"},
+        headers=auth_headers,
     )
 
     assert response.status_code == 504
@@ -220,6 +237,7 @@ def test_create_agent_run_maps_deepseek_errors_to_safe_response(
     expected_status: int,
     expected_code: str,
     expected_message: str,
+    auth_headers: dict[str, str],
 ) -> None:
     application = create_app()
     application.dependency_overrides[get_agent_run_service] = lambda: RaisingAgentRunService(
@@ -229,6 +247,7 @@ def test_create_agent_run_maps_deepseek_errors_to_safe_response(
     response = TestClient(application, raise_server_exceptions=False).post(
         "/api/v1/agent-runs",
         json={"message": "分析本月销售异常"},
+        headers=auth_headers,
     )
 
     assert response.status_code == expected_status
@@ -237,12 +256,13 @@ def test_create_agent_run_maps_deepseek_errors_to_safe_response(
     }
 
 
-def test_get_agent_run_returns_persisted_record() -> None:
+def test_get_agent_run_returns_persisted_record(auth_headers: dict[str, str]) -> None:
     application = create_app()
     application.dependency_overrides[get_agent_run_recorder] = RecordingRunQuery
 
     response = TestClient(application).get(
-        "/api/v1/agent-runs/d6109938-c9ba-4bc0-a20a-27e1b1fceb67"
+        "/api/v1/agent-runs/d6109938-c9ba-4bc0-a20a-27e1b1fceb67",
+        headers=auth_headers,
     )
 
     assert response.status_code == 200
@@ -250,12 +270,15 @@ def test_get_agent_run_returns_persisted_record() -> None:
     assert response.json()["output"] == "输出"
 
 
-def test_get_unknown_agent_run_returns_safe_not_found() -> None:
+def test_get_unknown_agent_run_returns_safe_not_found(
+    auth_headers: dict[str, str],
+) -> None:
     application = create_app()
     application.dependency_overrides[get_agent_run_recorder] = RecordingRunQuery
 
     response = TestClient(application).get(
-        "/api/v1/agent-runs/8e52ea3a-f9ec-41b8-9464-e21e4c4ef9e9"
+        "/api/v1/agent-runs/8e52ea3a-f9ec-41b8-9464-e21e4c4ef9e9",
+        headers=auth_headers,
     )
 
     assert response.status_code == 404

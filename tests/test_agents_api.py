@@ -46,7 +46,9 @@ class UnavailableAgentService(RecordingAgentService):
         raise DatabaseUnavailableError("sensitive database detail")
 
 
-def test_create_agent_normalizes_and_returns_configuration() -> None:
+def test_create_agent_normalizes_and_returns_configuration(
+    auth_headers: dict[str, str],
+) -> None:
     from chint_ai_platform.agents_api import get_agent_service
 
     service = RecordingAgentService()
@@ -60,6 +62,7 @@ def test_create_agent_normalizes_and_returns_configuration() -> None:
             "description": "  分析异常  ",
             "system_prompt": "  只分析销售数据  ",
         },
+        headers=auth_headers,
     )
 
     assert response.status_code == 201
@@ -73,13 +76,15 @@ def test_create_agent_normalizes_and_returns_configuration() -> None:
     }
 
 
-def test_get_agent_returns_configuration() -> None:
+def test_get_agent_returns_configuration(auth_headers: dict[str, str]) -> None:
     from chint_ai_platform.agents_api import get_agent_service
 
     application = create_app()
     application.dependency_overrides[get_agent_service] = RecordingAgentService
 
-    response = TestClient(application).get(f"/api/v1/agents/{AGENT_ID}")
+    response = TestClient(application).get(
+        f"/api/v1/agents/{AGENT_ID}", headers=auth_headers
+    )
 
     assert response.status_code == 200
     assert response.json()["system_prompt"] == "只分析销售数据"
@@ -93,26 +98,33 @@ def test_get_agent_returns_configuration() -> None:
         {"name": "Agent", "description": "x" * 501, "system_prompt": "Prompt"},
     ],
 )
-def test_create_agent_rejects_invalid_fields(payload: dict[str, str]) -> None:
-    response = TestClient(create_app()).post("/api/v1/agents", json=payload)
+def test_create_agent_rejects_invalid_fields(
+    payload: dict[str, str], auth_headers: dict[str, str]
+) -> None:
+    response = TestClient(create_app()).post(
+        "/api/v1/agents", json=payload, headers=auth_headers
+    )
 
     assert response.status_code == 422
 
 
-def test_get_agent_rejects_invalid_uuid() -> None:
-    response = TestClient(create_app()).get("/api/v1/agents/not-a-uuid")
+def test_get_agent_rejects_invalid_uuid(auth_headers: dict[str, str]) -> None:
+    response = TestClient(create_app()).get(
+        "/api/v1/agents/not-a-uuid", headers=auth_headers
+    )
 
     assert response.status_code == 422
 
 
-def test_get_agent_returns_safe_not_found_error() -> None:
+def test_get_agent_returns_safe_not_found_error(auth_headers: dict[str, str]) -> None:
     from chint_ai_platform.agents_api import get_agent_service
 
     application = create_app()
     application.dependency_overrides[get_agent_service] = RecordingAgentService
 
     response = TestClient(application).get(
-        "/api/v1/agents/8e52ea3a-f9ec-41b8-9464-e21e4c4ef9e9"
+        "/api/v1/agents/8e52ea3a-f9ec-41b8-9464-e21e4c4ef9e9",
+        headers=auth_headers,
     )
 
     assert response.status_code == 404
@@ -121,7 +133,7 @@ def test_get_agent_returns_safe_not_found_error() -> None:
     }
 
 
-def test_run_agent_delegates_id_and_message() -> None:
+def test_run_agent_delegates_id_and_message(auth_headers: dict[str, str]) -> None:
     from chint_ai_platform.agents_api import get_configured_agent_run_service
 
     service = RecordingConfiguredRunService()
@@ -131,6 +143,7 @@ def test_run_agent_delegates_id_and_message() -> None:
     response = TestClient(application).post(
         f"/api/v1/agents/{AGENT_ID}/runs",
         json={"message": "分析本月异常"},
+        headers=auth_headers,
     )
 
     assert response.status_code == 201
@@ -142,7 +155,9 @@ def test_run_agent_delegates_id_and_message() -> None:
     }
 
 
-def test_run_unknown_agent_returns_safe_not_found_error() -> None:
+def test_run_unknown_agent_returns_safe_not_found_error(
+    auth_headers: dict[str, str],
+) -> None:
     from chint_ai_platform.agents_api import get_configured_agent_run_service
 
     application = create_app()
@@ -153,6 +168,7 @@ def test_run_unknown_agent_returns_safe_not_found_error() -> None:
     response = TestClient(application).post(
         "/api/v1/agents/8e52ea3a-f9ec-41b8-9464-e21e4c4ef9e9/runs",
         json={"message": "分析异常"},
+        headers=auth_headers,
     )
 
     assert response.status_code == 404
@@ -161,7 +177,9 @@ def test_run_unknown_agent_returns_safe_not_found_error() -> None:
     }
 
 
-def test_run_agent_rejects_blank_message_without_calling_service() -> None:
+def test_run_agent_rejects_blank_message_without_calling_service(
+    auth_headers: dict[str, str],
+) -> None:
     from chint_ai_platform.agents_api import get_configured_agent_run_service
 
     service = RecordingConfiguredRunService()
@@ -171,6 +189,7 @@ def test_run_agent_rejects_blank_message_without_calling_service() -> None:
     response = TestClient(application).post(
         f"/api/v1/agents/{AGENT_ID}/runs",
         json={"message": "   "},
+        headers=auth_headers,
     )
 
     assert response.status_code == 422
@@ -179,12 +198,14 @@ def test_run_agent_rejects_blank_message_without_calling_service() -> None:
 
 def test_default_create_reports_missing_database_configuration(
     monkeypatch: pytest.MonkeyPatch,
+    auth_headers: dict[str, str],
 ) -> None:
     monkeypatch.delenv("DATABASE_URL", raising=False)
 
     response = TestClient(create_app(), raise_server_exceptions=False).post(
         "/api/v1/agents",
         json={"name": "Agent", "description": "", "system_prompt": "Prompt"},
+        headers=auth_headers,
     )
 
     assert response.status_code == 503
@@ -196,7 +217,9 @@ def test_default_create_reports_missing_database_configuration(
     }
 
 
-def test_create_maps_database_failure_to_safe_response() -> None:
+def test_create_maps_database_failure_to_safe_response(
+    auth_headers: dict[str, str],
+) -> None:
     from chint_ai_platform.agents_api import get_agent_service
 
     application = create_app()
@@ -205,6 +228,7 @@ def test_create_maps_database_failure_to_safe_response() -> None:
     response = TestClient(application, raise_server_exceptions=False).post(
         "/api/v1/agents",
         json={"name": "Agent", "description": "", "system_prompt": "Prompt"},
+        headers=auth_headers,
     )
 
     assert response.status_code == 503
