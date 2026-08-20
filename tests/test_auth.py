@@ -25,6 +25,8 @@ def test_platform_api_key_must_be_configured(monkeypatch, value):
     [
         None,
         HTTPAuthorizationCredentials(scheme="Basic", credentials="secret"),
+        HTTPAuthorizationCredentials(scheme="Bearer", credentials=""),
+        HTTPAuthorizationCredentials(scheme="Bearer", credentials="   "),
         HTTPAuthorizationCredentials(scheme="Bearer", credentials="wrong"),
     ],
 )
@@ -54,3 +56,31 @@ def test_validate_api_key_uses_compare_digest(monkeypatch):
     validate_api_key(HTTPAuthorizationCredentials(scheme="Bearer", credentials="client-key"))
 
     assert compared == [("client-key", "test-platform-key")]
+
+
+def test_authentication_not_configured_error_does_not_expose_credentials(monkeypatch):
+    server_key = "server-sensitive-key-7319"
+    client_key = "client-sensitive-key-8426"
+    monkeypatch.delenv("PLATFORM_API_KEY", raising=False)
+
+    with pytest.raises(AuthenticationNotConfiguredError) as error:
+        validate_api_key(
+            HTTPAuthorizationCredentials(scheme="Bearer", credentials=client_key)
+        )
+
+    assert server_key not in str(error.value)
+    assert client_key not in str(error.value)
+
+
+def test_invalid_api_key_error_does_not_expose_credentials(monkeypatch):
+    server_key = "server-sensitive-key-7319"
+    client_key = "client-sensitive-key-8426"
+    monkeypatch.setenv("PLATFORM_API_KEY", server_key)
+
+    with pytest.raises(InvalidApiKeyError) as error:
+        validate_api_key(
+            HTTPAuthorizationCredentials(scheme="Bearer", credentials=client_key)
+        )
+
+    assert server_key not in str(error.value)
+    assert client_key not in str(error.value)
