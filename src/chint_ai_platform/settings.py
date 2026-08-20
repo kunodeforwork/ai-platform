@@ -8,6 +8,15 @@ from dataclasses import dataclass
 class DeepSeekNotConfiguredError(RuntimeError):
     """Raised when the DeepSeek API credential is unavailable."""
 
+    error_code = "deepseek_not_configured"
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.run_id: str | None = None
+
+    def bind_run_id(self, run_id: str) -> None:
+        self.run_id = run_id
+
 
 class DatabaseNotConfiguredError(RuntimeError):
     """Raised when the database URL is unavailable."""

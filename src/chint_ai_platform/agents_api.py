@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, StringConstraints
 
-from chint_ai_platform.agent_runs import AgentRunService
+from chint_ai_platform.agent_runs import RecordedAgentRunService
 from chint_ai_platform.agents import (
     Agent,
     AgentNotFoundError,
@@ -84,7 +84,7 @@ def get_agent_service(
 
 def get_configured_agent_run_service(
     agents: Annotated[AgentService, Depends(get_agent_service)],
-    runs: Annotated[AgentRunService, Depends(get_agent_run_service)],
+    runs: Annotated[RecordedAgentRunService, Depends(get_agent_run_service)],
 ) -> ConfiguredAgentRunService:
     return ConfiguredAgentRunService(agents, runs)
 

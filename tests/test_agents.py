@@ -64,10 +64,10 @@ def test_in_memory_repository_keeps_parallel_writes() -> None:
 
 class RecordingRunService:
     def __init__(self) -> None:
-        self.requests: list[tuple[str, str]] = []
+        self.requests: list[tuple[str | None, str, str]] = []
 
-    def run(self, system_prompt: str, message: str) -> AgentRun:
-        self.requests.append((system_prompt, message))
+    def run(self, agent_id: str | None, system_prompt: str, message: str) -> AgentRun:
+        self.requests.append((agent_id, system_prompt, message))
         return AgentRun("run-id", "completed", "分析完成")
 
 
@@ -79,5 +79,5 @@ def test_configured_run_uses_selected_agent_system_prompt() -> None:
 
     result = service.run(agent.id, "分析本月异常")
 
-    assert runs.requests == [("只分析销售数据", "分析本月异常")]
+    assert runs.requests == [(agent.id, "只分析销售数据", "分析本月异常")]
     assert result.output == "分析完成"

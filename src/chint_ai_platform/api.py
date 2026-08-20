@@ -1,13 +1,15 @@
 """HTTP API for Agent runs."""
 
+from datetime import datetime
 from functools import lru_cache
 from typing import Annotated, Literal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, StringConstraints
 
-from chint_ai_platform.agent_runs import AgentRunService
+from chint_ai_platform.agent_runs import AgentRunNotFoundError, RecordedAgentRunService
 from chint_ai_platform.deepseek import (
     DEFAULT_SYSTEM_PROMPT,
     DeepSeekAuthenticationError,
@@ -16,6 +18,8 @@ from chint_ai_platform.deepseek import (
     DeepSeekUpstreamError,
     EnvironmentDeepSeekAgentExecutor,
 )
+from chint_ai_platform.persistence import get_session_factory
+from chint_ai_platform.run_recording import SqlAlchemyAgentRunRecorder
 from chint_ai_platform.settings import DeepSeekNotConfiguredError
 
 NonBlankMessage = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
@@ -38,6 +42,17 @@ class ErrorDetail(BaseModel):
 
 class ErrorResponse(BaseModel):
     error: ErrorDetail
+
+
+class PersistedAgentRunResponse(BaseModel):
+    id: str
+    agent_id: str | None
+    input: str
+    output: str | None
+    status: Literal["running", "completed", "failed"]
+    error_code: str | None
+    created_at: datetime
+    completed_at: datetime | None
 
 
 ERROR_RESPONSES: dict[type[Exception], tuple[int, str, str]] = {
@@ -78,19 +93,43 @@ def register_deepseek_exception_handlers(application: FastAPI) -> None:
             for error_type, response in ERROR_RESPONSES.items()
             if isinstance(error, error_type)
         )
+        content: dict[str, object] = {
+            "error": ErrorDetail(code=code, message=message).model_dump()
+        }
+        run_id = getattr(error, "run_id", None)
+        if run_id is not None:
+            content["run_id"] = run_id
         return JSONResponse(
             status_code=response_status,
-            content=ErrorResponse(error=ErrorDetail(code=code, message=message)).model_dump(),
+            content=content,
         )
 
     for error_type in ERROR_RESPONSES:
         application.add_exception_handler(error_type, handle_deepseek_error)
 
+    async def handle_run_not_found(request: Request, error: AgentRunNotFoundError) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={
+                "error": {"code": "agent_run_not_found", "message": "Agent run not found"}
+            },
+        )
+
+    application.add_exception_handler(AgentRunNotFoundError, handle_run_not_found)
+
 
 @lru_cache
-def get_agent_run_service() -> AgentRunService:
+def get_agent_run_recorder() -> SqlAlchemyAgentRunRecorder:
+    return SqlAlchemyAgentRunRecorder(lambda: get_session_factory()())
+
+
+@lru_cache
+def get_agent_run_service() -> RecordedAgentRunService:
     """Provide the process-wide default Agent run service."""
-    return AgentRunService(EnvironmentDeepSeekAgentExecutor())
+    return RecordedAgentRunService(
+        EnvironmentDeepSeekAgentExecutor(),
+        get_agent_run_recorder(),
+    )
 
 
 router = APIRouter(prefix="/api/v1", tags=["agent-runs"])
@@ -103,11 +142,20 @@ router = APIRouter(prefix="/api/v1", tags=["agent-runs"])
 )
 def create_agent_run(
     request: CreateAgentRunRequest,
-    service: Annotated[AgentRunService, Depends(get_agent_run_service)],
+    service: Annotated[RecordedAgentRunService, Depends(get_agent_run_service)],
 ) -> AgentRunResponse:
-    result = service.run(DEFAULT_SYSTEM_PROMPT, request.message)
+    result = service.run(None, DEFAULT_SYSTEM_PROMPT, request.message)
     return AgentRunResponse(
         run_id=result.run_id,
         status=result.status,
         output=result.output,
     )
+
+
+@router.get("/agent-runs/{run_id}", response_model=PersistedAgentRunResponse)
+def get_agent_run(
+    run_id: UUID,
+    recorder: Annotated[SqlAlchemyAgentRunRecorder, Depends(get_agent_run_recorder)],
+) -> PersistedAgentRunResponse:
+    run = recorder.get(str(run_id))
+    return PersistedAgentRunResponse(**run.__dict__)

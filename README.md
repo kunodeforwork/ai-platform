@@ -34,6 +34,7 @@ uvicorn chint_ai_platform.main:app --reload
 - 查询 Agent：`GET http://127.0.0.1:8000/api/v1/agents/{agent_id}`
 - 按 Agent 运行：`POST http://127.0.0.1:8000/api/v1/agents/{agent_id}/runs`
 - Agent 运行：`POST http://127.0.0.1:8000/api/v1/agent-runs`
+- 查询运行记录：`GET http://127.0.0.1:8000/api/v1/agent-runs/{run_id}`
 - OpenAPI 文档：`http://127.0.0.1:8000/docs`
 
 创建 Agent：
@@ -73,10 +74,22 @@ Invoke-RestMethod -Method Post `
 }
 ```
 
+每次通过上述两个运行接口发起的有效请求都会先持久化为 `running`，随后更新为
+`completed` 或 `failed`。成功响应中的 `run_id` 可直接用于查询完整审计记录：
+
+```powershell
+Invoke-RestMethod -Method Get `
+  -Uri "http://127.0.0.1:8000/api/v1/agent-runs/3b9d82b0-ae2f-4d92-9417-c9ea46dcfa1b"
+```
+
+DeepSeek 超时、限流、鉴权或上游错误的安全响应会在顶层返回同一个 `run_id`，
+对应记录保存稳定的 `error_code`，不会保存原始异常、请求头、密钥或模型推理内容。
+请求体校验失败（422）不会创建运行记录。
+
 ## 测试与当前边界
 
 自动测试使用手写假客户端，不连接 DeepSeek，也不需要真实密钥。设置密钥并启动服务后，上面的示例请求就是显式的真实连通性检查。
 
-Agent 配置默认保存在 PostgreSQL 中，可供多个服务进程共享。日常自动测试使用临时 SQLite，不访问网络；设置独立的 `POSTGRES_TEST_DATABASE_URL` 后可运行显式 PostgreSQL 集成测试。
+Agent 配置与运行审计记录默认保存在 PostgreSQL 中，可供多个服务进程共享。日常自动测试使用临时 SQLite，不访问网络；设置独立的 `POSTGRES_TEST_DATABASE_URL` 后可运行显式 PostgreSQL 集成测试。
 
-本切片不包含数据库、鉴权、租户隔离、任务队列、多轮会话、流式输出、工具调用、Docker 或前端。`AgentExecutor` 协议仍是后续接入其他模型与编排框架的替换点。
+本切片不包含鉴权、租户隔离、任务队列、多轮会话、流式输出、工具调用或前端。`AgentExecutor` 协议仍是后续接入其他模型与编排框架的替换点。

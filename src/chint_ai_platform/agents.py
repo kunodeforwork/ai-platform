@@ -78,7 +78,7 @@ class AgentService:
 
 
 class AgentRunGateway(Protocol):
-    def run(self, system_prompt: str, message: str) -> AgentRun: ...
+    def run(self, agent_id: str | None, system_prompt: str, message: str) -> AgentRun: ...
 
 
 class ConfiguredAgentRunService:
@@ -90,4 +90,4 @@ class ConfiguredAgentRunService:
 
     def run(self, agent_id: str, message: str) -> AgentRun:
         agent = self._agents.get(agent_id)
-        return self._runs.run(agent.system_prompt, message)
+        return self._runs.run(agent.id, agent.system_prompt, message)

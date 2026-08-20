@@ -16,17 +16,32 @@ DEFAULT_SYSTEM_PROMPT = (
 class DeepSeekExecutorError(RuntimeError):
     """Base class for safe DeepSeek boundary failures."""
 
+    error_code = "deepseek_upstream_error"
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.run_id: str | None = None
+
+    def bind_run_id(self, run_id: str) -> None:
+        self.run_id = run_id
+
 
 class DeepSeekTimeoutError(DeepSeekExecutorError):
     """Raised when DeepSeek does not respond before the SDK timeout."""
+
+    error_code = "deepseek_timeout"
 
 
 class DeepSeekRateLimitedError(DeepSeekExecutorError):
     """Raised when DeepSeek rejects a request due to rate limiting."""
 
+    error_code = "deepseek_rate_limited"
+
 
 class DeepSeekAuthenticationError(DeepSeekExecutorError):
     """Raised when DeepSeek rejects the configured credential."""
+
+    error_code = "deepseek_authentication_failed"
 
 
 class DeepSeekUpstreamError(DeepSeekExecutorError):

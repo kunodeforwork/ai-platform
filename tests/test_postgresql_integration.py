@@ -9,8 +9,13 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
 
 from alembic import command
+from chint_ai_platform.agent_runs import PersistedAgentRun
 from chint_ai_platform.agents import Agent
-from chint_ai_platform.persistence import DatabaseSessionScope, SqlAlchemyAgentRepository
+from chint_ai_platform.persistence import (
+    DatabaseSessionScope,
+    SqlAlchemyAgentRepository,
+    SqlAlchemyAgentRunRepository,
+)
 
 POSTGRES_TEST_DATABASE_URL = os.getenv("POSTGRES_TEST_DATABASE_URL")
 
@@ -43,3 +48,23 @@ def test_postgresql_migration_and_repository_round_trip() -> None:
     loaded = SqlAlchemyAgentRepository(read_scope).get(agent.id)
     read_scope.close()
     assert loaded == agent
+
+    run = PersistedAgentRun.start(
+        str(uuid4()), agent.id, "检查 PostgreSQL", datetime.now(UTC)
+    )
+    run_write_scope = DatabaseSessionScope(factory)
+    run_repository = SqlAlchemyAgentRunRepository(run_write_scope)
+    run_repository.add(run)
+    run_write_scope.commit()
+    run_write_scope.close()
+
+    completed = run.complete("连接正常", datetime.now(UTC))
+    update_scope = DatabaseSessionScope(factory)
+    SqlAlchemyAgentRunRepository(update_scope).update(completed)
+    update_scope.commit()
+    update_scope.close()
+
+    run_read_scope = DatabaseSessionScope(factory)
+    loaded_run = SqlAlchemyAgentRunRepository(run_read_scope).get(run.id)
+    run_read_scope.close()
+    assert loaded_run == completed
