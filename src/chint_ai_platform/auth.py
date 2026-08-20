@@ -2,7 +2,10 @@
 
 import os
 import secrets
+from typing import Annotated
 
+from fastapi import FastAPI, Request, Security, status
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 
@@ -32,3 +35,49 @@ def validate_api_key(credentials: HTTPAuthorizationCredentials | None) -> None:
         credentials.credentials, configured_key
     ):
         raise InvalidApiKeyError("Invalid API key")
+
+
+def require_api_key(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Security(bearer_scheme),
+    ],
+) -> None:
+    validate_api_key(credentials)
+
+
+def register_auth_exception_handlers(application: FastAPI) -> None:
+    async def handle_not_configured(
+        _request: Request,
+        _error: AuthenticationNotConfiguredError,
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "error": {
+                    "code": "auth_not_configured",
+                    "message": "API authentication is not configured",
+                }
+            },
+        )
+
+    async def handle_invalid_key(
+        _request: Request,
+        _error: InvalidApiKeyError,
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            headers={"WWW-Authenticate": "Bearer"},
+            content={
+                "error": {
+                    "code": "invalid_api_key",
+                    "message": "Invalid API key",
+                }
+            },
+        )
+
+    application.add_exception_handler(
+        AuthenticationNotConfiguredError,
+        handle_not_configured,
+    )
+    application.add_exception_handler(InvalidApiKeyError, handle_invalid_key)
