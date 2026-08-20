@@ -15,6 +15,8 @@ $env:DATABASE_URL = "postgresql+psycopg://chint:chint-local-password@localhost:5
 alembic upgrade head
 pytest -v
 $env:DEEPSEEK_API_KEY = "你的-DeepSeek-API-Key"
+$env:PLATFORM_API_KEY = "你的-平台-API-Key"
+$headers = @{ "X-API-Key" = $env:PLATFORM_API_KEY }
 uvicorn chint_ai_platform.main:app --reload
 ```
 
@@ -25,7 +27,9 @@ uvicorn chint_ai_platform.main:app --reload
 - `thinking={"type":"disabled"}`（由服务固定发送）
 - `DATABASE_URL=postgresql+psycopg://chint:chint-local-password@localhost:5432/chint_ai`（仅本地开发示例）
 
-`DEEPSEEK_API_KEY` 是唯一必填项。缺少时健康检查仍可用，Agent 运行接口会返回 `503/deepseek_not_configured`。
+`DEEPSEEK_API_KEY` 与 `PLATFORM_API_KEY` 均为必填项。缺少 `PLATFORM_API_KEY` 时，受保护接口返回 `503/auth_not_configured`；请求未携带或携带无效凭证时返回 `401/invalid_api_key`。缺少 `DEEPSEEK_API_KEY` 时，Agent 运行接口返回 `503/deepseek_not_configured`。
+
+所有 `/api/v1` 接口都需要在 `X-API-Key` 请求头中提供 `PLATFORM_API_KEY`。`/health`、`/docs` 与 `/openapi.json` 是公开接口，无需 API Key；即使鉴权服务配置缺失，健康检查和 API 文档仍可访问。
 
 服务启动后可访问：
 
@@ -42,6 +46,7 @@ uvicorn chint_ai_platform.main:app --reload
 ```powershell
 $agent = Invoke-RestMethod -Method Post `
   -Uri http://127.0.0.1:8000/api/v1/agents `
+  -Headers $headers `
   -ContentType 'application/json' `
   -Body '{"name":"销售分析助手","description":"分析区域销售异常","system_prompt":"你是正泰销售分析助手，请给出简洁、可验证的分析。"}'
 ```
@@ -51,6 +56,7 @@ $agent = Invoke-RestMethod -Method Post `
 ```powershell
 Invoke-RestMethod -Method Post `
   -Uri "http://127.0.0.1:8000/api/v1/agents/$($agent.id)/runs" `
+  -Headers $headers `
   -ContentType 'application/json' `
   -Body '{"message":"分析本月销售异常"}'
 ```
@@ -60,6 +66,7 @@ Invoke-RestMethod -Method Post `
 ```powershell
 Invoke-RestMethod -Method Post `
   -Uri http://127.0.0.1:8000/api/v1/agent-runs `
+  -Headers $headers `
   -ContentType 'application/json' `
   -Body '{"message":"分析本月销售异常"}'
 ```
@@ -79,7 +86,8 @@ Invoke-RestMethod -Method Post `
 
 ```powershell
 Invoke-RestMethod -Method Get `
-  -Uri "http://127.0.0.1:8000/api/v1/agent-runs/3b9d82b0-ae2f-4d92-9417-c9ea46dcfa1b"
+  -Uri "http://127.0.0.1:8000/api/v1/agent-runs/3b9d82b0-ae2f-4d92-9417-c9ea46dcfa1b" `
+  -Headers $headers
 ```
 
 DeepSeek 超时、限流、鉴权或上游错误的安全响应会在顶层返回同一个 `run_id`，
@@ -92,4 +100,4 @@ DeepSeek 超时、限流、鉴权或上游错误的安全响应会在顶层返�
 
 Agent 配置与运行审计记录默认保存在 PostgreSQL 中，可供多个服务进程共享。日常自动测试使用临时 SQLite，不访问网络；设置独立的 `POSTGRES_TEST_DATABASE_URL` 后可运行显式 PostgreSQL 集成测试。
 
-本切片不包含鉴权、租户隔离、任务队列、多轮会话、流式输出、工具调用或前端。`AgentExecutor` 协议仍是后续接入其他模型与编排框架的替换点。
+本切片包含平台级 API Key 鉴权，但不包含租户隔离、任务队列、多轮会话、流式输出、工具调用或前端。`AgentExecutor` 协议仍是后续接入其他模型与编排框架的替换点。
