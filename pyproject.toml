@@ -9,9 +9,12 @@ description = "Minimum runnable vertical slice for the CHINT enterprise AI Agent
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "alembic>=1.16,<2",
     "fastapi>=0.116,<1",
     "openai>=1.99,<3",
+    "psycopg[binary]>=3.2,<4",
     "pydantic>=2.11,<3",
+    "sqlalchemy>=2.0,<3",
     "uvicorn[standard]>=0.35,<1",
 ]
 
@@ -26,6 +29,7 @@ dev = [
 packages = ["src/chint_ai_platform"]
 
 [tool.pytest.ini_options]
+addopts = "--basetemp=.pytest-tmp"
 pythonpath = ["src"]
 testpaths = ["tests"]
 

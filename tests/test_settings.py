@@ -1,6 +1,11 @@
 import pytest
 
-from chint_ai_platform.settings import DeepSeekNotConfiguredError, DeepSeekSettings
+from chint_ai_platform.settings import (
+    DatabaseNotConfiguredError,
+    DatabaseSettings,
+    DeepSeekNotConfiguredError,
+    DeepSeekSettings,
+)
 
 
 def test_settings_use_deepseek_defaults() -> None:
@@ -30,3 +35,19 @@ def test_settings_reject_missing_or_blank_api_key(api_key: str | None) -> None:
 
     with pytest.raises(DeepSeekNotConfiguredError):
         DeepSeekSettings.from_environment(environment)
+
+
+def test_database_settings_read_database_url() -> None:
+    settings = DatabaseSettings.from_environment(
+        {"DATABASE_URL": "postgresql+psycopg://user:password@db/app"}
+    )
+
+    assert settings.url == "postgresql+psycopg://user:password@db/app"
+
+
+@pytest.mark.parametrize("database_url", [None, "", "   "])
+def test_database_settings_reject_missing_or_blank_url(database_url: str | None) -> None:
+    environment = {} if database_url is None else {"DATABASE_URL": database_url}
+
+    with pytest.raises(DatabaseNotConfiguredError):
+        DatabaseSettings.from_environment(environment)

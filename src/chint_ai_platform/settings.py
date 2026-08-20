@@ -9,6 +9,26 @@ class DeepSeekNotConfiguredError(RuntimeError):
     """Raised when the DeepSeek API credential is unavailable."""
 
 
+class DatabaseNotConfiguredError(RuntimeError):
+    """Raised when the database URL is unavailable."""
+
+
+@dataclass(frozen=True)
+class DatabaseSettings:
+    url: str
+
+    @classmethod
+    def from_environment(
+        cls,
+        environ: Mapping[str, str] | None = None,
+    ) -> "DatabaseSettings":
+        values = os.environ if environ is None else environ
+        url = values.get("DATABASE_URL", "").strip()
+        if not url:
+            raise DatabaseNotConfiguredError("Database is not configured")
+        return cls(url=url)
+
+
 @dataclass(frozen=True)
 class DeepSeekSettings:
     """Configuration required to create a DeepSeek client."""

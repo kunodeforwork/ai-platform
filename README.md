@@ -10,16 +10,20 @@
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
+docker compose up -d postgres
+$env:DATABASE_URL = "postgresql+psycopg://chint:chint-local-password@localhost:5432/chint_ai"
+alembic upgrade head
 pytest -v
 $env:DEEPSEEK_API_KEY = "你的-DeepSeek-API-Key"
 uvicorn chint_ai_platform.main:app --reload
 ```
 
-也可以复制 [.env.example](.env.example) 查看支持的配置项。应用不会自动读取 `.env` 文件；请由 shell、容器或部署平台注入环境变量。默认配置为：
+也可以复制 [.env.example](.env.example) 查看支持的配置项。应用不会自动读取 `.env` 文件；请由 shell、容器或部署平台注入环境变量。应用也不会自动建表或迁移，部署时必须显式运行 `alembic upgrade head`。默认配置为：
 
 - `DEEPSEEK_BASE_URL=https://api.deepseek.com`
 - `DEEPSEEK_MODEL=deepseek-v4-flash`
 - `thinking={"type":"disabled"}`（由服务固定发送）
+- `DATABASE_URL=postgresql+psycopg://chint:chint-local-password@localhost:5432/chint_ai`（仅本地开发示例）
 
 `DEEPSEEK_API_KEY` 是唯一必填项。缺少时健康检查仍可用，Agent 运行接口会返回 `503/deepseek_not_configured`。
 
@@ -73,6 +77,6 @@ Invoke-RestMethod -Method Post `
 
 自动测试使用手写假客户端，不连接 DeepSeek，也不需要真实密钥。设置密钥并启动服务后，上面的示例请求就是显式的真实连通性检查。
 
-Agent 配置当前只保存在单个服务进程的内存中；服务重启会丢失，多进程实例之间也不会共享。下一切片将用 PostgreSQL 仓储替换该实现。
+Agent 配置默认保存在 PostgreSQL 中，可供多个服务进程共享。日常自动测试使用临时 SQLite，不访问网络；设置独立的 `POSTGRES_TEST_DATABASE_URL` 后可运行显式 PostgreSQL 集成测试。
 
 本切片不包含数据库、鉴权、租户隔离、任务队列、多轮会话、流式输出、工具调用、Docker 或前端。`AgentExecutor` 协议仍是后续接入其他模型与编排框架的替换点。

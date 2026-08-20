@@ -1,5 +1,6 @@
 """HTTP API for Agent configurations."""
 
+from collections.abc import Iterator
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
@@ -8,18 +9,25 @@ from fastapi import APIRouter, Depends, FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, StringConstraints
 
+from chint_ai_platform.agent_runs import AgentRunService
 from chint_ai_platform.agents import (
     Agent,
     AgentNotFoundError,
     AgentService,
     ConfiguredAgentRunService,
-    InMemoryAgentRepository,
 )
 from chint_ai_platform.api import (
     AgentRunResponse,
     CreateAgentRunRequest,
     get_agent_run_service,
 )
+from chint_ai_platform.persistence import (
+    DatabaseSessionScope,
+    DatabaseUnavailableError,
+    SqlAlchemyAgentRepository,
+    get_session_factory,
+)
+from chint_ai_platform.settings import DatabaseNotConfiguredError
 
 AgentName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 AgentDescription = Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)]
@@ -53,24 +61,32 @@ class AgentResponse(BaseModel):
         )
 
 
-_AGENT_REPOSITORY = InMemoryAgentRepository()
-_AGENT_SERVICE = AgentService(_AGENT_REPOSITORY)
-_CONFIGURED_AGENT_RUN_SERVICE = ConfiguredAgentRunService(
-    _AGENT_SERVICE,
-    get_agent_run_service(),
-)
+def get_database_session_scope() -> Iterator[DatabaseSessionScope]:
+    scope = DatabaseSessionScope(get_session_factory)
+    try:
+        yield scope
+        scope.commit()
+    except Exception:
+        scope.rollback()
+        raise
+    finally:
+        scope.close()
 
 
-def get_agent_repository() -> InMemoryAgentRepository:
-    return _AGENT_REPOSITORY
+def get_agent_service(
+    scope: Annotated[
+        DatabaseSessionScope,
+        Depends(get_database_session_scope, scope="function"),
+    ],
+) -> AgentService:
+    return AgentService(SqlAlchemyAgentRepository(scope))
 
 
-def get_agent_service() -> AgentService:
-    return _AGENT_SERVICE
-
-
-def get_configured_agent_run_service() -> ConfiguredAgentRunService:
-    return _CONFIGURED_AGENT_RUN_SERVICE
+def get_configured_agent_run_service(
+    agents: Annotated[AgentService, Depends(get_agent_service)],
+    runs: Annotated[AgentRunService, Depends(get_agent_run_service)],
+) -> ConfiguredAgentRunService:
+    return ConfiguredAgentRunService(agents, runs)
 
 
 def register_agent_exception_handlers(application: FastAPI) -> None:
@@ -81,6 +97,19 @@ def register_agent_exception_handlers(application: FastAPI) -> None:
         )
 
     application.add_exception_handler(AgentNotFoundError, handle_not_found)
+
+    async def handle_database_error(request: Request, error: Exception) -> JSONResponse:
+        if isinstance(error, DatabaseNotConfiguredError):
+            code, message = "database_not_configured", "Database is not configured"
+        else:
+            code, message = "database_unavailable", "Database is unavailable"
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"error": {"code": code, "message": message}},
+        )
+
+    application.add_exception_handler(DatabaseNotConfiguredError, handle_database_error)
+    application.add_exception_handler(DatabaseUnavailableError, handle_database_error)
 
 
 router = APIRouter(prefix="/api/v1/agents", tags=["agents"])

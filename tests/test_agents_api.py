@@ -1,12 +1,13 @@
-from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
 
+import chint_ai_platform.agents_api as agents_api_module
 from chint_ai_platform.agent_runs import AgentRun
 from chint_ai_platform.agents import Agent, AgentNotFoundError
 from chint_ai_platform.main import create_app
+from chint_ai_platform.persistence import DatabaseUnavailableError
 
 AGENT_ID = "5b1c53ef-6cd7-4537-81b6-d37ef87c5f69"
 CREATED_AT = datetime(2026, 8, 20, 9, 30, tzinfo=UTC)
@@ -38,6 +39,11 @@ class RecordingConfiguredRunService:
 class MissingConfiguredRunService:
     def run(self, agent_id: str, message: str) -> AgentRun:
         raise AgentNotFoundError(agent_id)
+
+
+class UnavailableAgentService(RecordingAgentService):
+    def create(self, name: str, description: str, system_prompt: str) -> Agent:
+        raise DatabaseUnavailableError("sensitive database detail")
 
 
 def test_create_agent_normalizes_and_returns_configuration() -> None:
@@ -136,15 +142,6 @@ def test_run_agent_delegates_id_and_message() -> None:
     }
 
 
-def test_agent_service_provider_is_singleton_under_parallel_access() -> None:
-    from chint_ai_platform.agents_api import get_agent_service
-
-    with ThreadPoolExecutor(max_workers=16) as executor:
-        services = list(executor.map(lambda _: get_agent_service(), range(100)))
-
-    assert len({id(service) for service in services}) == 1
-
-
 def test_run_unknown_agent_returns_safe_not_found_error() -> None:
     from chint_ai_platform.agents_api import get_configured_agent_run_service
 
@@ -178,3 +175,84 @@ def test_run_agent_rejects_blank_message_without_calling_service() -> None:
 
     assert response.status_code == 422
     assert service.requests == []
+
+
+def test_default_create_reports_missing_database_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    response = TestClient(create_app(), raise_server_exceptions=False).post(
+        "/api/v1/agents",
+        json={"name": "Agent", "description": "", "system_prompt": "Prompt"},
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "error": {
+            "code": "database_not_configured",
+            "message": "Database is not configured",
+        }
+    }
+
+
+def test_create_maps_database_failure_to_safe_response() -> None:
+    from chint_ai_platform.agents_api import get_agent_service
+
+    application = create_app()
+    application.dependency_overrides[get_agent_service] = UnavailableAgentService
+
+    response = TestClient(application, raise_server_exceptions=False).post(
+        "/api/v1/agents",
+        json={"name": "Agent", "description": "", "system_prompt": "Prompt"},
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "error": {
+            "code": "database_unavailable",
+            "message": "Database is unavailable",
+        }
+    }
+
+
+class RecordingScope:
+    def __init__(self) -> None:
+        self.commits = 0
+        self.rollbacks = 0
+        self.closes = 0
+
+    def commit(self) -> None:
+        self.commits += 1
+
+    def rollback(self) -> None:
+        self.rollbacks += 1
+
+    def close(self) -> None:
+        self.closes += 1
+
+
+def test_database_scope_dependency_commits_and_closes(monkeypatch: pytest.MonkeyPatch) -> None:
+    scope = RecordingScope()
+    monkeypatch.setattr(agents_api_module, "DatabaseSessionScope", lambda factory: scope)
+    dependency = agents_api_module.get_database_session_scope()
+
+    assert next(dependency) is scope
+    with pytest.raises(StopIteration):
+        next(dependency)
+
+    assert (scope.commits, scope.rollbacks, scope.closes) == (1, 0, 1)
+
+
+def test_database_scope_dependency_rolls_back_and_closes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scope = RecordingScope()
+    monkeypatch.setattr(agents_api_module, "DatabaseSessionScope", lambda factory: scope)
+    dependency = agents_api_module.get_database_session_scope()
+    next(dependency)
+
+    with pytest.raises(RuntimeError, match="service failed"):
+        dependency.throw(RuntimeError("service failed"))
+
+    assert (scope.commits, scope.rollbacks, scope.closes) == (0, 1, 1)
